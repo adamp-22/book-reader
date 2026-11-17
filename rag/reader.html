@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reader</title>
+<link rel="icon" href="data:,">
 <style>
 :root{
   --bar:#323639; --bar-ink:#f1f3f4; --bar-muted:#bdc1c6; --bar-hover:rgba(255,255,255,.1); --bar-line:rgba(255,255,255,.14); --field:#1f2123;
@@ -79,7 +80,7 @@ body.side-open #sidebar{width:300px}
 .tick.cur{background:var(--tick-cur);height:4px}
 
 /* ---------- find bar */
-.findbar{position:absolute;top:10px;right:26px;z-index:6;width:min(460px,calc(100% - 40px));background:var(--find);color:var(--find-ink);
+.findbar{position:absolute;top:10px;right:26px;z-index:6;width:min(520px,calc(100% - 40px));background:var(--find);color:var(--find-ink);
   border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.4),0 0 0 1px rgba(0,0,0,.06);padding:5px 6px 6px 12px}
 .findbar[hidden]{display:none}
 .frow{display:flex;align-items:center;gap:2px}
@@ -97,6 +98,11 @@ body.side-open #sidebar{width:300px}
 .ctx b{color:var(--find-ink);font-weight:600}
 .opt{display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none}
 .opt input{margin:0;accent-color:var(--link)}
+.opt[hidden]{display:none}
+.mode{display:flex;flex:none;background:rgba(128,128,128,.16);border-radius:7px;padding:2px;margin-right:8px}
+.mode button{border:0;background:transparent;color:var(--find-muted);font:inherit;font-size:12px;font-weight:500;padding:3px 9px;border-radius:5px;cursor:pointer;white-space:nowrap}
+.mode button:hover:not(.on){color:var(--find-ink)}
+.mode button.on{background:var(--link);color:var(--find)}
 .link{border:0;background:none;padding:0;color:var(--link);cursor:pointer;white-space:nowrap}
 .spin{width:12px;height:12px;border:2px solid var(--find-line);border-top-color:var(--link);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -137,8 +143,8 @@ kbd{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid curre
   <div id="ticks"></div>
   <div class="findbar" id="findbar" hidden>
     <div class="frow">
-      <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg>
-      <input id="findInput" data-tp="placeholder" autocomplete="off" spellcheck="false">
+      <div class="mode" id="findMode" data-tt="modeTip"><button data-mode="question" data-t="modeQ"></button><button data-mode="keyword" data-t="modeK"></button></div>
+      <input id="findInput" autocomplete="off" spellcheck="false">
       <span class="count" id="findCount"></span>
       <span class="vsep"></span>
       <button class="fb" id="findPrev" data-tt="prev" disabled><svg viewBox="0 0 24 24"><path d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg></button>
@@ -148,7 +154,7 @@ kbd{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid curre
     <div class="frow2">
       <span class="ctx" id="findCtx"></span>
       <button class="link" id="showList" data-t="list" hidden></button>
-      <label class="opt" data-tt="preciseTip"><input type="checkbox" id="precise"><span data-t="precise"></span></label>
+      <label class="opt" id="preciseOpt" data-tt="preciseTip"><input type="checkbox" id="precise"><span data-t="precise"></span></label>
     </div>
   </div>
 </div>
@@ -163,24 +169,30 @@ const QUOTE_START = /^["„“”'‘’‚»«]/, QUOTES = /^["„“”'‘’
 const I18N = {
   de: {side: "Seitenleiste: Inhalt und Treffer", zoomOut: "Verkleinern (⌘−)", zoomIn: "Vergrößern (⌘+)", auto: "Automatisch",
        width: "Seitenbreite", fit: "Ganze Seite", find: "Im Buch suchen (⌘F)", toc: "Inhalt", hits: "Treffer",
-       placeholder: "Frage stellen oder Begriff suchen …", prev: "Vorheriger Treffer (⇧↵)", next: "Nächster Treffer (↵)",
+       modeQ: "Frage", modeK: "Stichwort",
+       modeTip: "Suchart wechseln (Tab): Frage findet die relevanten Textstellen, Stichwort den exakten Text wie Strg+F",
+       placeholderQ: "Frage stellen und Enter drücken …", placeholderK: "Im Buch suchen …", prev: "Vorheriger Treffer (⇧↵)", next: "Nächster Treffer (↵)",
        close: "Schließen (Esc)", list: "Liste", precise: "Präzise",
        preciseTip: "Zusätzlicher Reranker: etwas genauer, aber einige Sekunden Rechenlast pro Frage",
        empty: "Mit <kbd>⌘F</kbd> eine Frage stellen – die passenden Textstellen erscheinen hier und werden im Buch markiert.",
-       hint: "Frage stellen – oder „Begriff“ in Anführungszeichen für die exakte Suche",
-       searchLit: q => `Suche „${q}“ …`, searchPrecise: "Suche präzise (einige Sekunden) …", search: "Suche relevante Textstellen …",
+       hintQ: "Frage stellen und Enter drücken · Tab wechselt zur Stichwortsuche",
+       hintK: "Exakte Suche wie Strg+F, jedes Vorkommen · Tab wechselt zur Fragesuche",
+       searchPrecise: "Suche präzise (einige Sekunden) …", search: "Suche relevante Textstellen …",
        none: "Keine Treffer", noneLit: "Der Begriff kommt im Buch nicht vor.", noneSem: "Keine passende Textstelle gefunden.",
        error: "Fehler", page: "S.",
        headLit: (n, q, first) => `${n} Fundstelle${n === 1 ? "" : "n"} für „${q}“${first ? ` (die ersten ${first})` : ""}`,
        headSem: (n, q) => `${n} Textstelle${n === 1 ? "" : "n"} zu „${q}“ – nach Relevanz`},
   en: {side: "Sidebar: contents and results", zoomOut: "Zoom out (⌘−)", zoomIn: "Zoom in (⌘+)", auto: "Automatic",
        width: "Page width", fit: "Whole page", find: "Search the book (⌘F)", toc: "Contents", hits: "Results",
-       placeholder: "Ask a question or search a term …", prev: "Previous result (⇧↵)", next: "Next result (↵)",
+       modeQ: "Question", modeK: "Keyword",
+       modeTip: "Switch search mode (Tab): Question finds the relevant passages, Keyword the exact text like Ctrl+F",
+       placeholderQ: "Ask a question and press Enter …", placeholderK: "Find in the book …", prev: "Previous result (⇧↵)", next: "Next result (↵)",
        close: "Close (Esc)", list: "List", precise: "Precise",
        preciseTip: "Extra reranker: a little more accurate, but a few seconds of GPU load per question",
        empty: "Press <kbd>⌘F</kbd> and ask a question – the matching passages appear here and are highlighted in the book.",
-       hint: "Ask a question – or put a “term” in quotes for an exact search",
-       searchLit: q => `Searching “${q}” …`, searchPrecise: "Searching precisely (a few seconds) …", search: "Finding relevant passages …",
+       hintQ: "Ask a question and press Enter · Tab switches to keyword search",
+       hintK: "Exact search like Ctrl+F, every occurrence · Tab switches to question search",
+       searchPrecise: "Searching precisely (a few seconds) …", search: "Finding relevant passages …",
        none: "No results", noneLit: "The term does not occur in the book.", noneSem: "No matching passage found.",
        error: "Error", page: "p.",
        headLit: (n, q, first) => `${n} occurrence${n === 1 ? "" : "s"} of “${q}”${first ? ` (first ${first})` : ""}`,
@@ -193,7 +205,7 @@ function applyLanguage(code){
   document.documentElement.lang = code;
   document.querySelectorAll("[data-t]").forEach(el => el.textContent = T[el.dataset.t]);
   document.querySelectorAll("[data-tt]").forEach(el => el.title = T[el.dataset.tt]);
-  document.querySelectorAll("[data-tp]").forEach(el => el.placeholder = T[el.dataset.tp]);
+  setMode(findMode, false);
 }
 const viewer = $("#viewer"), pagesBox = $("#pages"), ticksBox = $("#ticks"), findbar = $("#findbar"), findInput = $("#findInput");
 let pages = [], pageEls = [], toc = [], zoomMode = store.get("zoomMode", "auto"), scale = 1;
@@ -232,6 +244,7 @@ async function init(){
   onScroll();
   const params = new URLSearchParams(location.search), q = params.get("q");  // deep link: /?q=Frage[&list=1]
   if (params.get("list")){showTab("hits"); setSide(true, false); applyZoom(null)}
+  if (params.get("mode")) setMode(params.get("mode"), false);
   if (q){openFind(); findInput.value = q; search()}
 }
 
@@ -327,14 +340,31 @@ function markToc(c){
 function sectionAt(i){let s = ""; toc.forEach(t => {if (t.page <= i) s = t.title}); return s}
 
 // ================================================================ find (⌘F)
+// two modes: "question" (semantic search, on Enter) and "keyword" (exact text like Ctrl+F, as you type).
+// A "quoted term" in question mode is searched exactly as well.
+let findMode = store.get("findMode", "question"), typeTimer = 0;
+const hintText = () => findMode === "keyword" ? T.hintK : T.hintQ;
+function setMode(m, rerun = true){
+  findMode = m === "keyword" ? "keyword" : "question";
+  store.set("findMode", findMode);
+  document.querySelectorAll("#findMode button").forEach(b => b.classList.toggle("on", b.dataset.mode === findMode));
+  findInput.placeholder = findMode === "keyword" ? T.placeholderK : T.placeholderQ;
+  $("#preciseOpt").hidden = findMode === "keyword";
+  if (!rerun) return;
+  findInput.focus();
+  if (findInput.value.trim()) search();
+  else {reqId++; setHits([], ""); setCtx(hintText())}
+}
+$("#findMode").onclick = e => {const b = e.target.closest("button"); if (b) setMode(b.dataset.mode)};
 function queryKey(raw){
-  const literal = QUOTE_START.test(raw), q = literal ? raw.replace(QUOTES, "").trim() : raw;
+  const quoted = QUOTE_START.test(raw), literal = quoted || findMode === "keyword";
+  const q = quoted ? raw.replace(QUOTES, "").trim() : raw;
   return {literal, q, key: (literal ? "L:" : $("#precise").checked ? "P:" : "S:") + q};
 }
 function openFind(){
   findbar.hidden = false; $("#findBtn").classList.add("on");
   findInput.focus(); findInput.select();
-  if (!hits.length && !findInput.value) setCtx(T.hint);
+  if (!hits.length && !findInput.value) setCtx(hintText());
 }
 function closeFind(){
   findbar.hidden = true; $("#findBtn").classList.remove("on");
@@ -344,12 +374,13 @@ function setCtx(html){$("#findCtx").innerHTML = html}
 function setCount(html, none = false){const c = $("#findCount"); c.innerHTML = html; c.classList.toggle("none", none)}
 
 async function search(){
+  clearTimeout(typeTimer);
   const raw = findInput.value.trim();
-  if (!raw){setHits([], ""); return}
+  if (!raw){reqId++; setHits([], ""); setCtx(hintText()); return}
   const {literal, q, key} = queryKey(raw), precise = $("#precise").checked, id = ++reqId;
+  if (literal && q.replace(/[^\p{L}\p{N}]/gu, "").length < 2){setHits([], ""); lastKey = null; return}  // wait for 2 letters
   lastKey = key;
-  setCount(`<span class="spin"></span>`);
-  setCtx(literal ? T.searchLit(esc(q)) : precise ? T.searchPrecise : T.search);
+  if (!literal){setCount(`<span class="spin"></span>`); setCtx(precise ? T.searchPrecise : T.search)}
   try {
     const url = literal ? `/api/find?q=${encodeURIComponent(q)}` : `/api/ask?q=${encodeURIComponent(q)}&precise=${precise ? 1 : 0}`;
     const data = await (await fetch(url)).json();
@@ -449,6 +480,13 @@ findInput.addEventListener("keydown", e => {
     e.preventDefault();
     if (queryKey(findInput.value.trim()).key === lastKey && hits.length) step(e.shiftKey ? -1 : 1); else search();
   } else if (e.key === "Escape"){e.preventDefault(); closeFind()}
+  else if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey){
+    e.preventDefault(); setMode(findMode === "keyword" ? "question" : "keyword");
+  }
+});
+findInput.addEventListener("input", () => {  // keyword mode searches as you type, like Ctrl+F
+  if (findMode !== "keyword") return;
+  clearTimeout(typeTimer); typeTimer = setTimeout(search, 120);
 });
 $("#findNext").onclick = () => step(1);
 $("#findPrev").onclick = () => step(-1);

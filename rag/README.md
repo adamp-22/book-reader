@@ -22,13 +22,14 @@ uv run rag/reader.py --book mybook        # opens http://127.0.0.1:8765
 
 The original pages of the PDF, in a PDF-reader interface: page number, zoom, a contents sidebar. The interface follows the book's language (English or German).
 
-- **⌘F** (Ctrl+F) opens the find bar. Type a **question** and press Enter: every relevant passage is highlighted on the page, the current one in orange.
+- **⌘F** (Ctrl+F) opens the find bar. It has two modes; switch with the toggle on its left or with **Tab**. The reader remembers the last one.
+  - **Question**: type a question and press Enter. Every relevant passage is highlighted on the page, the current one in orange, and the best passage comes first. **Precise** turns on the reranker (off by default).
+  - **Keyword**: normal Ctrl+F. It finds every occurrence of the exact text as you type, starting at the current page. Case, line breaks and hyphenation are ignored, and parts of words match too ("market" finds "markets").
   - `↵` / `⇧↵` (or ⌘G / ⇧⌘G) step through the hits.
   - Markers on the scrollbar show where the hits are.
-  - **List** shows them ranked, with section and pages.
-- **"A term in quotes"** searches the exact text, like Ctrl+F in any PDF reader: every occurrence, starting at the current page.
-- **Precise** turns on the reranker. Off by default.
-- Deep links: `/?q=question`, `/#page=74`, `/?q=…&list=1`.
+  - **List** shows them in the sidebar, with section and pages.
+- In question mode, a **"term in quotes"** is searched exactly as well.
+- Deep links: `/?q=question`, `/?mode=keyword&q=term`, `/#page=74`, `/?q=…&list=1`.
 
 The PDF is found through `book.json`; `--pdf` overrides it. On the first start the book is embedded (about 40 s for 300 pages); after that the reader starts in a few seconds.
 
