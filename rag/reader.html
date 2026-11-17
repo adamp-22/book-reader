@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reader</title>
+<style>
+:root{
+  --bar:#323639; --bar-ink:#f1f3f4; --bar-muted:#bdc1c6; --bar-hover:rgba(255,255,255,.1); --bar-line:rgba(255,255,255,.14); --field:#1f2123;
+  --canvas:#525659; --side:#2a2c2f; --side-ink:#e8eaed; --side-muted:#9aa0a6; --side-hover:rgba(255,255,255,.06); --side-on:rgba(138,180,248,.16);
+  --accent:#8ab4f8;
+  --find:#ffffff; --find-ink:#202124; --find-muted:#5f6368; --find-line:#e3e3e3; --link:#1a73e8; --err:#d93025;
+  --hl:#ffe100; --hl-cur:#ff8a00; --tick:#fbbc04; --tick-cur:#ff6d00;
+}
+@media (prefers-color-scheme:dark){:root{--find:#35363a; --find-ink:#e8eaed; --find-muted:#9aa0a6; --find-line:#4a4c50; --link:#8ab4f8; --err:#f28b82}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:grid;grid-template-rows:44px minmax(0,1fr);grid-template-columns:auto minmax(0,1fr);grid-template-areas:"bar bar" "side stage";
+  background:var(--canvas);color:var(--bar-ink);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+svg{width:20px;height:20px;fill:currentColor;flex:none}
+
+/* ---------- toolbar */
+.toolbar{grid-area:bar;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;padding:0 8px;background:var(--bar);box-shadow:0 1px 3px rgba(0,0,0,.4);z-index:10}
+.tl,.tc,.tr{display:flex;align-items:center;gap:2px;min-width:0}
+.tr{justify-content:flex-end}
+.ib{width:34px;height:34px;border:0;border-radius:50%;background:transparent;display:grid;place-items:center;cursor:pointer;color:var(--bar-ink)}
+.ib:hover{background:var(--bar-hover)}
+.ib.on{color:var(--accent);background:rgba(138,180,248,.14)}
+.title{margin-left:8px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pagebox{display:flex;align-items:center;gap:6px;color:var(--bar-muted);font-variant-numeric:tabular-nums}
+.pagebox input{width:46px;height:26px;border:0;border-radius:4px;background:var(--field);color:var(--bar-ink);text-align:center}
+.sep{width:1px;height:20px;background:var(--bar-line);margin:0 10px}
+.toolbar select{height:26px;border:0;border-radius:4px;background:var(--field);color:var(--bar-ink);padding:0 6px;cursor:pointer}
+.toolbar select option{background:#fff;color:#202124}
+
+/* ---------- sidebar */
+#sidebar{grid-area:side;width:0;overflow:hidden;background:var(--side);color:var(--side-ink);display:flex;flex-direction:column;transition:width .15s ease;
+  box-shadow:1px 0 0 rgba(0,0,0,.35)}
+body.side-open #sidebar{width:300px}
+.tabs{display:flex;gap:4px;padding:8px 8px 6px;flex:none;width:300px}
+.tab{flex:1;height:30px;border:0;border-radius:6px;background:transparent;color:var(--side-muted);cursor:pointer;font-weight:500}
+.tab:hover{background:var(--side-hover)}
+.tab.on{background:var(--side-on);color:var(--accent)}
+.badge{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--tick);color:#202124;font-size:11px;font-weight:700;line-height:18px}
+.panel{flex:1;overflow-y:auto;padding:2px 8px 16px;width:300px;min-height:0}
+.toc{display:block;width:100%;text-align:left;border:0;background:none;color:var(--side-ink);padding:5px 8px;border-radius:5px;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.8px}
+.toc:hover{background:var(--side-hover)}
+.toc.l0{font-weight:600;margin-top:6px}
+.toc.l1{padding-left:20px}
+.toc.l2{padding-left:34px;color:var(--side-muted)}
+.toc.on{background:var(--side-on);color:var(--accent)}
+.toc .pn{float:right;color:var(--side-muted);font-weight:400;margin-left:6px;font-variant-numeric:tabular-nums}
+.hits-head{padding:6px 8px 8px;color:var(--side-muted);font-size:12px}
+.hit{display:grid;grid-template-columns:22px 1fr;gap:2px 8px;width:100%;text-align:left;border:0;background:none;color:var(--side-ink);padding:8px;border-radius:6px;cursor:pointer}
+.hit:hover{background:var(--side-hover)}
+.hit.cur{background:var(--side-on)}
+.num{width:20px;height:20px;border-radius:50%;background:var(--tick);color:#202124;font-size:11px;font-weight:700;display:grid;place-items:center;margin-top:1px}
+.hit.cur .num{background:var(--tick-cur)}
+.ht{font-weight:600;font-size:12.8px;line-height:1.3}
+.hc{font-size:11.5px;color:var(--side-muted);white-space:nowrap}
+.hx{grid-column:2;font-size:12px;color:var(--side-muted);line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hx mark{background:rgba(251,188,4,.35);color:inherit;border-radius:2px}
+.empty{padding:14px 10px;color:var(--side-muted);font-size:12.5px;line-height:1.5}
+
+/* ---------- pages */
+.stage{grid-area:stage;position:relative;min-width:0;min-height:0}
+#viewer{position:absolute;inset:0;overflow:auto;outline:none}
+#pages{padding:14px 24px 35vh;min-width:max-content}
+.page{position:relative;margin:0 auto 12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.page img{display:block;width:100%;height:100%;user-select:none;-webkit-user-drag:none}
+/* one layer per page: overlapping line boxes do not add up to darker stripes */
+.hls{position:absolute;inset:0;mix-blend-mode:multiply;opacity:.5;pointer-events:none}
+.hl{position:absolute;background:var(--hl);border-radius:1px;cursor:pointer;pointer-events:auto}
+.hl.cur{background:var(--hl-cur)}
+#ticks{position:absolute;top:0;bottom:0;right:2px;width:9px;pointer-events:none;z-index:2}
+.tick{position:absolute;left:0;right:0;height:3px;border-radius:1px;background:var(--tick)}
+.tick.cur{background:var(--tick-cur);height:4px}
+
+/* ---------- find bar */
+.findbar{position:absolute;top:10px;right:26px;z-index:6;width:min(460px,calc(100% - 40px));background:var(--find);color:var(--find-ink);
+  border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.4),0 0 0 1px rgba(0,0,0,.06);padding:5px 6px 6px 12px}
+.findbar[hidden]{display:none}
+.frow{display:flex;align-items:center;gap:2px}
+.frow > svg{color:var(--find-muted);width:18px;height:18px;margin-right:6px}
+#findInput{flex:1;min-width:0;height:30px;border:0;outline:0;background:transparent;font-size:14.5px}
+#findInput::placeholder{color:var(--find-muted)}
+.count{white-space:nowrap;color:var(--find-muted);font-size:12.5px;font-variant-numeric:tabular-nums;padding:0 6px;display:flex;align-items:center;gap:6px}
+.count.none{color:var(--err)}
+.vsep{width:1px;height:22px;background:var(--find-line);margin:0 3px}
+.fb{width:30px;height:30px;border:0;border-radius:50%;background:transparent;color:var(--find-muted);display:grid;place-items:center;cursor:pointer}
+.fb:hover:not(:disabled){background:rgba(128,128,128,.16);color:var(--find-ink)}
+.fb:disabled{opacity:.35;cursor:default}
+.frow2{display:flex;align-items:center;gap:10px;margin-top:4px;padding-top:5px;border-top:1px solid var(--find-line);font-size:12px;color:var(--find-muted);min-height:22px}
+.ctx{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctx b{color:var(--find-ink);font-weight:600}
+.opt{display:flex;align-items:center;gap:5px;cursor:pointer;white-space:nowrap;user-select:none}
+.opt input{margin:0;accent-color:var(--link)}
+.link{border:0;background:none;padding:0;color:var(--link);cursor:pointer;white-space:nowrap}
+.spin{width:12px;height:12px;border:2px solid var(--find-line);border-top-color:var(--link);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+kbd{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid currentColor;border-bottom-width:2px;border-radius:4px;padding:0 4px;opacity:.8}
+@media (max-width:760px){.title,.sep,#zoomSel{display:none} body.side-open #sidebar{width:260px}}
+</style>
+</head>
+<body>
+<header class="toolbar">
+  <div class="tl">
+    <button class="ib" id="sideBtn" data-tt="side"><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg></button>
+    <span class="title" id="docTitle"></span>
+  </div>
+  <div class="tc">
+    <div class="pagebox"><input id="pageno" value="" aria-label="Page"><span id="pageCount"></span></div>
+    <span class="sep"></span>
+    <button class="ib" id="zoomOut" data-tt="zoomOut"><svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg></button>
+    <select id="zoomSel" title="Zoom">
+      <option value="auto" data-t="auto"></option><option value="page-width" data-t="width"></option><option value="page-fit" data-t="fit"></option>
+      <option value="0.5">50 %</option><option value="0.75">75 %</option><option value="1">100 %</option><option value="1.25">125 %</option>
+      <option value="1.5">150 %</option><option value="2">200 %</option><option value="3">300 %</option>
+    </select>
+    <button class="ib" id="zoomIn" data-tt="zoomIn"><svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg></button>
+  </div>
+  <div class="tr">
+    <button class="ib" id="findBtn" data-tt="find"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg></button>
+  </div>
+</header>
+
+<nav id="sidebar">
+  <div class="tabs"><button class="tab on" data-tab="toc" data-t="toc"></button><button class="tab" data-tab="hits"><span data-t="hits"></span><span class="badge" id="hitBadge" hidden></span></button></div>
+  <div class="panel" id="tocPanel"></div>
+  <div class="panel" id="hitPanel" hidden></div>
+</nav>
+
+<div class="stage">
+  <div id="viewer" tabindex="-1"><div id="pages"></div></div>
+  <div id="ticks"></div>
+  <div class="findbar" id="findbar" hidden>
+    <div class="frow">
+      <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"/></svg>
+      <input id="findInput" data-tp="placeholder" autocomplete="off" spellcheck="false">
+      <span class="count" id="findCount"></span>
+      <span class="vsep"></span>
+      <button class="fb" id="findPrev" data-tt="prev" disabled><svg viewBox="0 0 24 24"><path d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg></button>
+      <button class="fb" id="findNext" data-tt="next" disabled><svg viewBox="0 0 24 24"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg></button>
+      <button class="fb" id="findClose" data-tt="close"><svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+    </div>
+    <div class="frow2">
+      <span class="ctx" id="findCtx"></span>
+      <button class="link" id="showList" data-t="list" hidden></button>
+      <label class="opt" data-tt="preciseTip"><input type="checkbox" id="precise"><span data-t="precise"></span></label>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const store = {get(k, d){try{const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v)}catch{return d}},
+               set(k, v){try{localStorage.setItem(k, JSON.stringify(v))}catch{}}};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const PX = 96 / 72, PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+const QUOTE_START = /^["„“”'‘’‚»«]/, QUOTES = /^["„“”'‘’‚»«]+|["„“”'‘’‚»«]+$/g;
+const I18N = {
+  de: {side: "Seitenleiste: Inhalt und Treffer", zoomOut: "Verkleinern (⌘−)", zoomIn: "Vergrößern (⌘+)", auto: "Automatisch",
+       width: "Seitenbreite", fit: "Ganze Seite", find: "Im Buch suchen (⌘F)", toc: "Inhalt", hits: "Treffer",
+       placeholder: "Frage stellen oder Begriff suchen …", prev: "Vorheriger Treffer (⇧↵)", next: "Nächster Treffer (↵)",
+       close: "Schließen (Esc)", list: "Liste", precise: "Präzise",
+       preciseTip: "Zusätzlicher Reranker: etwas genauer, aber einige Sekunden Rechenlast pro Frage",
+       empty: "Mit <kbd>⌘F</kbd> eine Frage stellen – die passenden Textstellen erscheinen hier und werden im Buch markiert.",
+       hint: "Frage stellen – oder „Begriff“ in Anführungszeichen für die exakte Suche",
+       searchLit: q => `Suche „${q}“ …`, searchPrecise: "Suche präzise (einige Sekunden) …", search: "Suche relevante Textstellen …",
+       none: "Keine Treffer", noneLit: "Der Begriff kommt im Buch nicht vor.", noneSem: "Keine passende Textstelle gefunden.",
+       error: "Fehler", page: "S.",
+       headLit: (n, q, first) => `${n} Fundstelle${n === 1 ? "" : "n"} für „${q}“${first ? ` (die ersten ${first})` : ""}`,
+       headSem: (n, q) => `${n} Textstelle${n === 1 ? "" : "n"} zu „${q}“ – nach Relevanz`},
+  en: {side: "Sidebar: contents and results", zoomOut: "Zoom out (⌘−)", zoomIn: "Zoom in (⌘+)", auto: "Automatic",
+       width: "Page width", fit: "Whole page", find: "Search the book (⌘F)", toc: "Contents", hits: "Results",
+       placeholder: "Ask a question or search a term …", prev: "Previous result (⇧↵)", next: "Next result (↵)",
+       close: "Close (Esc)", list: "List", precise: "Precise",
+       preciseTip: "Extra reranker: a little more accurate, but a few seconds of GPU load per question",
+       empty: "Press <kbd>⌘F</kbd> and ask a question – the matching passages appear here and are highlighted in the book.",
+       hint: "Ask a question – or put a “term” in quotes for an exact search",
+       searchLit: q => `Searching “${q}” …`, searchPrecise: "Searching precisely (a few seconds) …", search: "Finding relevant passages …",
+       none: "No results", noneLit: "The term does not occur in the book.", noneSem: "No matching passage found.",
+       error: "Error", page: "p.",
+       headLit: (n, q, first) => `${n} occurrence${n === 1 ? "" : "s"} of “${q}”${first ? ` (first ${first})` : ""}`,
+       headSem: (n, q) => `${n} passage${n === 1 ? "" : "s"} for “${q}”, by relevance`},
+};
+let T = I18N.en;
+const emptyList = () => `<div class="empty">${T.empty}</div>`;
+function applyLanguage(code){
+  T = I18N[code] || I18N.en;
+  document.documentElement.lang = code;
+  document.querySelectorAll("[data-t]").forEach(el => el.textContent = T[el.dataset.t]);
+  document.querySelectorAll("[data-tt]").forEach(el => el.title = T[el.dataset.tt]);
+  document.querySelectorAll("[data-tp]").forEach(el => el.placeholder = T[el.dataset.tp]);
+}
+const viewer = $("#viewer"), pagesBox = $("#pages"), ticksBox = $("#ticks"), findbar = $("#findbar"), findInput = $("#findInput");
+let pages = [], pageEls = [], toc = [], zoomMode = store.get("zoomMode", "auto"), scale = 1;
+let hits = [], cur = -1, lastKey = null, lastQuery = "", lastMode = "", reqId = 0;
+
+// ================================================================ pages & zoom
+async function init(){
+  const meta = await (await fetch("/api/meta")).json();
+  applyLanguage(meta.language);
+  pages = meta.pages; toc = meta.toc;
+  document.title = meta.title; $("#docTitle").textContent = meta.title;
+  $("#pageCount").textContent = "/ " + pages[pages.length - 1].label;
+  const frag = document.createDocumentFragment();
+  pages.forEach((p, i) => {
+    const el = document.createElement("div");
+    el.className = "page"; el.dataset.i = i;
+    el.innerHTML = `<img alt="" decoding="async" draggable="false">`;
+    frag.appendChild(el); pageEls.push(el);
+  });
+  pagesBox.appendChild(frag);
+  const io = new IntersectionObserver(entries => {
+    for (const en of entries) if (en.isIntersecting){
+      const img = en.target.firstElementChild;
+      if (!img.getAttribute("src")) img.src = `/page/${en.target.dataset.i}.jpg`;
+      io.unobserve(en.target);
+    }
+  }, {root: viewer, rootMargin: "1600px 0px"});
+  pageEls.forEach(el => io.observe(el));
+  buildToc();
+  $("#hitPanel").innerHTML = emptyList();
+  if (store.get("side", false)) setSide(true, false);
+  applyZoom(null);
+  const hp = location.hash.match(/page=(\d+)/);
+  const start = hp ? pages.findIndex(p => p.label === hp[1]) : store.get("page", 0);
+  goToPage(start >= 0 ? start : 0, false);
+  onScroll();
+  const params = new URLSearchParams(location.search), q = params.get("q");  // deep link: /?q=Frage[&list=1]
+  if (params.get("list")){showTab("hits"); setSide(true, false); applyZoom(null)}
+  if (q){openFind(); findInput.value = q; search()}
+}
+
+function fitScale(mode){
+  const w = pages[0].w * PX, h = pages[0].h * PX;
+  const fitW = (viewer.clientWidth - 48) / w, fitP = (viewer.clientHeight - 28) / h;
+  if (mode === "page-width") return fitW;
+  if (mode === "page-fit") return fitP;
+  if (mode === "auto") return Math.min(fitW, 1.25);
+  return +mode;
+}
+function anchor(){const i = currentPage(), el = pageEls[i]; return el ? {i, f: (viewer.scrollTop - el.offsetTop) / el.offsetHeight} : null}
+function applyZoom(a = anchor()){
+  scale = Math.max(0.2, fitScale(zoomMode));
+  pageEls.forEach((el, i) => {el.style.width = Math.round(pages[i].w * PX * scale) + "px"; el.style.height = Math.round(pages[i].h * PX * scale) + "px"});
+  const sel = $("#zoomSel");
+  sel.querySelectorAll("option[data-custom]").forEach(o => o.remove());
+  if (![...sel.options].some(o => o.value === String(zoomMode))){
+    const o = new Option(Math.round(scale * 100) + " %", String(zoomMode)); o.dataset.custom = 1; sel.add(o);
+  }
+  sel.value = String(zoomMode);
+  if (a) viewer.scrollTop = pageEls[a.i].offsetTop + a.f * pageEls[a.i].offsetHeight;
+  drawTicks();
+}
+function setZoom(m){zoomMode = m; store.set("zoomMode", m); applyZoom()}
+function zoomStep(dir){
+  const next = dir > 0 ? PRESETS.find(p => p > scale + 0.01) : [...PRESETS].reverse().find(p => p < scale - 0.01);
+  if (next) setZoom(next);
+}
+$("#zoomSel").onchange = e => setZoom(isNaN(+e.target.value) ? e.target.value : +e.target.value);
+$("#zoomIn").onclick = () => zoomStep(1);
+$("#zoomOut").onclick = () => zoomStep(-1);
+let resizeT; window.addEventListener("resize", () => {clearTimeout(resizeT); resizeT = setTimeout(() => applyZoom(), 80)});
+
+function currentPage(){
+  const y = viewer.scrollTop + Math.min(viewer.clientHeight * 0.35, 260);
+  let lo = 0, hi = pageEls.length - 1;
+  while (lo < hi){const m = (lo + hi + 1) >> 1; if (pageEls[m].offsetTop <= y) lo = m; else hi = m - 1}
+  return lo;
+}
+function scrollToY(y, smooth = true){
+  const far = Math.abs(y - viewer.scrollTop) > 1.5 * viewer.clientHeight;  // long jumps are instant
+  viewer.scrollTo({top: Math.max(0, y), behavior: smooth && !far ? "smooth" : "auto"});
+}
+function goToPage(i, smooth = true){
+  i = Math.max(0, Math.min(pageEls.length - 1, i | 0));
+  scrollToY(pageEls[i].offsetTop - 12, smooth);
+}
+let scrollRaf = 0, saveT;
+function onScroll(){
+  scrollRaf = 0;
+  const c = currentPage();
+  if (document.activeElement !== $("#pageno")) $("#pageno").value = pages[c].label;
+  markToc(c);
+  clearTimeout(saveT); saveT = setTimeout(() => store.set("page", c), 300);
+}
+viewer.addEventListener("scroll", () => {if (!scrollRaf) scrollRaf = requestAnimationFrame(onScroll)});
+$("#pageno").addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  const v = e.target.value.trim(), i = pages.findIndex(p => p.label === v);
+  goToPage(i >= 0 ? i : (+v || 1) - 1); e.target.blur();
+});
+$("#pageno").addEventListener("focus", e => e.target.select());
+
+// ================================================================ sidebar
+function setSide(open, relayout = true){
+  const a = anchor();
+  document.body.classList.toggle("side-open", open);
+  $("#sideBtn").classList.toggle("on", open);
+  store.set("side", open);
+  if (relayout) setTimeout(() => applyZoom(a), 170);
+}
+$("#sideBtn").onclick = () => setSide(!document.body.classList.contains("side-open"));
+function showTab(name){
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === name));
+  $("#tocPanel").hidden = name !== "toc"; $("#hitPanel").hidden = name !== "hits";
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => showTab(t.dataset.tab));
+function buildToc(){
+  $("#tocPanel").innerHTML = toc.map((t, k) =>
+    `<button class="toc l${t.level}" data-k="${k}" title="${esc(t.title)}"><span class="pn">${esc(pages[t.page]?.label ?? "")}</span>${esc(t.title)}</button>`).join("");
+  $("#tocPanel").onclick = e => {const b = e.target.closest(".toc"); if (b) goToPage(toc[+b.dataset.k].page)};
+}
+let tocOn = -2;
+function markToc(c){
+  let k = -1; toc.forEach((t, j) => {if (t.page <= c) k = j});
+  if (k === tocOn) return;
+  tocOn = k;
+  $("#tocPanel .toc.on")?.classList.remove("on");
+  const b = $(`#tocPanel .toc[data-k="${k}"]`);
+  if (b){b.classList.add("on"); if (!$("#tocPanel").hidden) b.scrollIntoView({block: "nearest"})}
+}
+function sectionAt(i){let s = ""; toc.forEach(t => {if (t.page <= i) s = t.title}); return s}
+
+// ================================================================ find (⌘F)
+function queryKey(raw){
+  const literal = QUOTE_START.test(raw), q = literal ? raw.replace(QUOTES, "").trim() : raw;
+  return {literal, q, key: (literal ? "L:" : $("#precise").checked ? "P:" : "S:") + q};
+}
+function openFind(){
+  findbar.hidden = false; $("#findBtn").classList.add("on");
+  findInput.focus(); findInput.select();
+  if (!hits.length && !findInput.value) setCtx(T.hint);
+}
+function closeFind(){
+  findbar.hidden = true; $("#findBtn").classList.remove("on");
+  reqId++; setHits([], ""); lastKey = null; viewer.focus();
+}
+function setCtx(html){$("#findCtx").innerHTML = html}
+function setCount(html, none = false){const c = $("#findCount"); c.innerHTML = html; c.classList.toggle("none", none)}
+
+async function search(){
+  const raw = findInput.value.trim();
+  if (!raw){setHits([], ""); return}
+  const {literal, q, key} = queryKey(raw), precise = $("#precise").checked, id = ++reqId;
+  lastKey = key;
+  setCount(`<span class="spin"></span>`);
+  setCtx(literal ? T.searchLit(esc(q)) : precise ? T.searchPrecise : T.search);
+  try {
+    const url = literal ? `/api/find?q=${encodeURIComponent(q)}` : `/api/ask?q=${encodeURIComponent(q)}&precise=${precise ? 1 : 0}`;
+    const data = await (await fetch(url)).json();
+    if (id !== reqId) return;
+    if (data.error) throw new Error(data.error);
+    const list = literal
+      ? data.hits.map(h => ({title: sectionAt(h.page), pages: `${T.page} ${pages[h.page].label}`, text: h.line, highlights: [{page: h.page, rects: h.rects}]}))
+      : data.passages.map(p => ({title: p.section, pages: p.pages, text: p.text, highlights: p.highlights}));
+    setHits(list, literal ? "literal" : "semantic", q, literal ? data.total : list.length);
+    if (!list.length){setCount(T.none, true); setCtx(literal ? T.noneLit : T.noneSem); return}
+    // exact search starts at the current page like a normal reader; questions start with the best passage
+    const c = currentPage();
+    activate(literal ? Math.max(0, list.findIndex(h => h.highlights[0].page >= c)) : 0);
+  } catch (err){
+    if (id !== reqId) return;
+    setCount(T.error, true); setCtx(esc(err.message || err)); lastKey = null;
+  }
+}
+
+function setHits(list, mode, q = "", total = 0){
+  hits = list; cur = -1; lastMode = mode; lastQuery = q;
+  document.querySelectorAll(".hls").forEach(e => e.remove());
+  hits.forEach((h, k) => h.highlights.forEach(({page, rects}) => {
+    const el = pageEls[page]; if (!el) return;
+    let layer = el.querySelector(".hls");
+    if (!layer){layer = document.createElement("div"); layer.className = "hls"; el.appendChild(layer)}
+    for (const [x0, y0, x1, y1] of rects){
+      const d = document.createElement("div");
+      d.className = "hl"; d.dataset.k = k;
+      d.style.cssText = `left:${x0 * 100}%;top:${y0 * 100}%;width:${(x1 - x0) * 100}%;height:${(y1 - y0) * 100}%`;
+      layer.appendChild(d);
+    }
+  }));
+  $("#findPrev").disabled = $("#findNext").disabled = hits.length < 2;
+  $("#showList").hidden = !hits.length;
+  const badge = $("#hitBadge"); badge.hidden = !hits.length; badge.textContent = total > hits.length ? hits.length + "+" : hits.length;
+  renderHitList(total);
+  drawTicks();
+  if (!mode){setCount(""); setCtx("")}
+}
+
+function renderHitList(total){
+  const panel = $("#hitPanel");
+  if (!hits.length){panel.innerHTML = emptyList(); return}
+  const head = lastMode === "literal"
+    ? T.headLit(total, esc(lastQuery), total > hits.length ? hits.length : 0)
+    : T.headSem(hits.length, esc(lastQuery));
+  const re = lastMode === "literal" ? new RegExp(esc(lastQuery).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") : null;
+  panel.innerHTML = `<div class="hits-head">${head}</div>` + hits.map((h, k) => {
+    let text = esc(h.text.replace(/\|?\s*-{3,}[-|\s]*/g, " ").replace(/\s*\|\s*/g, " · ").replace(/^ · /, "").replace(/\n+/g, " ").replace(/» /g, ""));
+    if (re) text = text.replace(re, m => `<mark>${m}</mark>`);
+    return `<button class="hit" data-k="${k}"><span class="num">${k + 1}</span><span><span class="ht">${esc(h.title)}</span><span class="hc">${h.title ? " · " : ""}${esc(h.pages)}</span></span><span class="hx">${text}</span></button>`;
+  }).join("");
+}
+$("#hitPanel").onclick = e => {const b = e.target.closest(".hit"); if (b) activate(+b.dataset.k)};
+$("#showList").onclick = () => {showTab("hits"); if (!document.body.classList.contains("side-open")) setSide(true)};
+
+function drawTicks(){  // markers on the scrollbar, like find in Chrome
+  ticksBox.innerHTML = "";
+  if (!hits.length) return;
+  const total = viewer.scrollHeight, H = ticksBox.clientHeight, frag = document.createDocumentFragment();
+  hits.forEach((h, k) => {
+    const f = h.highlights[0]; if (!f) return;
+    const el = pageEls[f.page], y = el.offsetTop + Math.min(...f.rects.map(r => r[1])) * el.offsetHeight;
+    const t = document.createElement("div");
+    t.className = "tick" + (k === cur ? " cur" : ""); t.dataset.k = k; t.style.top = (y / total * H) + "px";
+    frag.appendChild(t);
+  });
+  ticksBox.appendChild(frag);
+}
+
+function activate(k, scroll = true){
+  if (!hits.length) return;
+  k = (k + hits.length) % hits.length;  // wraps around like find in a PDF reader
+  cur = k;
+  document.querySelectorAll(".hl.cur, .tick.cur, .hit.cur").forEach(e => e.classList.remove("cur"));
+  document.querySelectorAll(`.hl[data-k="${k}"], .tick[data-k="${k}"], .hit[data-k="${k}"]`).forEach(e => e.classList.add("cur"));
+  $(`.hit[data-k="${k}"]`)?.scrollIntoView({block: "nearest"});
+  const h = hits[k];
+  setCount(`${k + 1}/${hits.length}`);
+  setCtx(h.title ? `<b>${esc(h.title)}</b> · ${esc(h.pages)}` : esc(h.pages));
+  if (!scroll) return;
+  if (h.highlights.length){
+    const f = h.highlights[0], el = pageEls[f.page];
+    const y = el.offsetTop + Math.min(...f.rects.map(r => r[1])) * el.offsetHeight;
+    const visible = y > viewer.scrollTop + 70 && y < viewer.scrollTop + viewer.clientHeight * 0.7;
+    if (!visible) scrollToY(y - viewer.clientHeight * 0.28);
+  } else {
+    const m = h.pages.match(/\d+/), i = m ? pages.findIndex(p => p.label === m[0]) : -1;
+    if (i >= 0) goToPage(i);
+  }
+}
+function step(d){if (hits.length) activate(cur + d)}
+
+findInput.addEventListener("keydown", e => {
+  if (e.key === "Enter"){
+    e.preventDefault();
+    if (queryKey(findInput.value.trim()).key === lastKey && hits.length) step(e.shiftKey ? -1 : 1); else search();
+  } else if (e.key === "Escape"){e.preventDefault(); closeFind()}
+});
+$("#findNext").onclick = () => step(1);
+$("#findPrev").onclick = () => step(-1);
+$("#findClose").onclick = closeFind;
+$("#findBtn").onclick = () => findbar.hidden ? openFind() : closeFind();
+$("#precise").checked = store.get("precise", false);
+$("#precise").onchange = e => {store.set("precise", e.target.checked); if (lastMode === "semantic" && findInput.value.trim()) search()};
+pagesBox.addEventListener("click", e => {const d = e.target.closest(".hl"); if (d) activate(+d.dataset.k, false)});
+
+document.addEventListener("keydown", e => {
+  const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase();
+  if (mod && key === "f"){e.preventDefault(); openFind(); return}
+  if ((mod && key === "g") || e.key === "F3"){e.preventDefault(); step(e.shiftKey ? -1 : 1); return}
+  if (mod && (key === "=" || key === "+")){e.preventDefault(); zoomStep(1); return}
+  if (mod && key === "-"){e.preventDefault(); zoomStep(-1); return}
+  if (mod && key === "0"){e.preventDefault(); setZoom("auto"); return}
+  if (e.key === "Escape" && !findbar.hidden){closeFind(); return}
+  if (document.activeElement.tagName === "INPUT") return;
+  if (e.key === "ArrowRight" && !mod){goToPage(currentPage() + 1, false); e.preventDefault()}
+  if (e.key === "ArrowLeft" && !mod){goToPage(currentPage() - 1, false); e.preventDefault()}
+});
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Allow-list: only code and docs are tracked. Book PDFs, recordings, generated Markdown,
+# caches and evaluation questions (which quote the book) stay local.
+/*
+!/.gitignore
+!/README.md
+!/md_encoder/
+!/rag/
+!/examples/
+!/docs/
+
+__pycache__/
+*.pyc
+.cache/
+.DS_Store
+*.pdf
+*.mov
+*.jsonl
+!/examples/*.jsonl
